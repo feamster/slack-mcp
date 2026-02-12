@@ -262,7 +262,7 @@ class SlackClient:
 
         return messages
 
-    def get_unread_messages(self, hours: int = 24, check_threads: bool = True) -> dict[str, list[Message]]:
+    def get_unread_messages(self, hours: int = 24, max_dms: int = 15, max_channels: int = 15, check_threads: bool = True) -> dict[str, list[Message]]:
         """Get unread messages by checking recent activity.
 
         The Slack API's unread_count is unreliable (misses threads), so we
@@ -275,7 +275,7 @@ class SlackClient:
         # Check DMs first (most important) - sorted by last_read (most recent first)
         dm_convos = [c for c in conversations if c.type == "dm" and not c.is_archived]
         dm_convos.sort(key=lambda c: float(c.last_read) if c.last_read else 0, reverse=True)
-        for conv in dm_convos[:15]:
+        for conv in dm_convos[:max_dms]:
             oldest = float(conv.last_read) if conv.last_read else cutoff
             messages = self.get_messages(conv.id, limit=10, oldest=oldest)
 
@@ -295,7 +295,7 @@ class SlackClient:
         # Prioritize key channels, then others
         sorted_channels = sorted(channel_convos, key=lambda c: (c.name.lstrip("#") not in key_channels, c.name))
 
-        for conv in sorted_channels[:15]:
+        for conv in sorted_channels[:max_channels]:
             channel_messages = []
 
             # Get recent messages

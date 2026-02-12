@@ -83,10 +83,25 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="slack_unread",
-            description="Get unread message counts and previews",
+            description="Get unread messages from DMs and key channels",
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "hours": {
+                        "type": "number",
+                        "description": "Hours to look back (default: 24)",
+                        "default": 24,
+                    },
+                    "max_dms": {
+                        "type": "number",
+                        "description": "Max DM conversations to check (default: 15)",
+                        "default": 15,
+                    },
+                    "max_channels": {
+                        "type": "number",
+                        "description": "Max channels to check (default: 15)",
+                        "default": 15,
+                    },
                     "workspace": {
                         "type": "string",
                         "description": "Specific workspace (optional)",
@@ -339,7 +354,11 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
 
     elif name == "slack_unread":
         client = get_client(workspace)
-        unread = client.get_unread_messages()
+        hours = args.get("hours", 24)
+        max_dms = args.get("max_dms", 15)
+        max_channels = args.get("max_channels", 15)
+
+        unread = client.get_unread_messages(hours=hours, max_dms=max_dms, max_channels=max_channels)
 
         if not unread:
             return "No unread messages."
@@ -350,7 +369,8 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
             for msg in messages[:3]:
                 preview = truncate_text(msg.text, 60)
                 time_str = format_relative_time(msg.timestamp)
-                lines.append(f"  - {time_str}: \"{preview}\"")
+                user = msg.user_name or "someone"
+                lines.append(f"  - [{user}] {time_str}: \"{preview}\"")
             if len(messages) > 3:
                 lines.append(f"  - ... and {len(messages) - 3} more")
             lines.append("")
