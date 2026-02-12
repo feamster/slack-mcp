@@ -262,25 +262,30 @@ class SlackClient:
 
         return messages
 
-    def get_unread_messages(self, hours: int = 24) -> dict[str, list[Message]]:
-        """Get unread messages from all conversations."""
-        cutoff = time.time() - (hours * 3600)
+    def get_unread_messages(self, max_convos: int = 15) -> dict[str, list[Message]]:
+        """Get unread messages - only from conversations with unread_count > 0."""
         conversations = self.get_conversations()
         unread: dict[str, list[Message]] = {}
 
-        for conv in conversations:
+        # Only look at conversations with unread messages
+        has_unread = [c for c in conversations if c.unread_count and c.unread_count > 0]
+
+        # Limit to avoid slowness
+        for conv in has_unread[:max_convos]:
             if conv.is_archived:
                 continue
 
-            # Get messages since last_read or cutoff
-            oldest = float(conv.last_read) if conv.last_read else cutoff
+            # Resolve DM names
+            name = self.resolve_dm_name(conv) if conv.type == "dm" else conv.name
 
-            messages = self.get_messages(conv.id, limit=50, oldest=oldest)
+            # Get only unread messages (since last_read)
+            oldest = float(conv.last_read) if conv.last_read else None
+            messages = self.get_messages(conv.id, limit=conv.unread_count + 2, oldest=oldest)
+
             if messages:
-                # Add channel name to messages
                 for msg in messages:
-                    msg.channel_name = conv.name
-                unread[conv.name] = messages
+                    msg.channel_name = name
+                unread[name] = messages
 
         return unread
 
