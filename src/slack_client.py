@@ -272,9 +272,10 @@ class SlackClient:
         conversations = self.get_conversations()
         unread: dict[str, list[Message]] = {}
 
-        # Check DMs first (most important) - top 10
+        # Check DMs first (most important) - sorted by last_read (most recent first)
         dm_convos = [c for c in conversations if c.type == "dm" and not c.is_archived]
-        for conv in dm_convos[:10]:
+        dm_convos.sort(key=lambda c: float(c.last_read) if c.last_read else 0, reverse=True)
+        for conv in dm_convos[:15]:
             oldest = float(conv.last_read) if conv.last_read else cutoff
             messages = self.get_messages(conv.id, limit=10, oldest=oldest)
 
