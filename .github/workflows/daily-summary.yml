@@ -1,10 +1,10 @@
 name: Daily Slack Summary
 
 on:
-  schedule:
-    # Run every day at 12 PM UTC (7 AM EST / 8 AM EDT)
-    - cron: '0 12 * * *'
-  workflow_dispatch: # Allow manual trigger
+  # schedule:
+  #   # Run every day at 12 PM UTC (7 AM EST / 8 AM EDT)
+  #   - cron: '0 12 * * *'
+  workflow_dispatch: # Manual trigger only for now
 
 jobs:
   summarize:
