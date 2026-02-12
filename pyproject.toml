@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slack-mcp"
+version = "0.1.0"
+description = "Slack MCP server for reading and responding to Slack messages"
+requires-python = ">=3.10"
+dependencies = [
+    "slack-sdk>=3.27.0",
+    "mcp>=1.0.0",
+]
+
+[project.scripts]
+slack-mcp = "src.mcp_server:main"
+slack-summary = "slack_summary:main"

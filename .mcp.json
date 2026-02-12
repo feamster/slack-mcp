@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "slack": {
+      "command": "python3",
+      "args": ["/Users/feamster/src/slack-mcp/server.py"]
+    }
+  }
+}

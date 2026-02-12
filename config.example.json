@@ -1,0 +1,15 @@
+{
+  "workspaces": {
+    "work": {
+      "name": "Work Slack",
+      "token": "xoxp-your-token-here",
+      "priority": 1
+    },
+    "research": {
+      "name": "Research Group",
+      "token": "xoxp-your-token-here",
+      "priority": 2
+    }
+  },
+  "default_workspace": "work"
+}

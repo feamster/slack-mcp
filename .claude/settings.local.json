@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(gh repo view:*)",
+      "Bash(gh api:*)",
+      "Bash(pip install:*)",
+      "Bash(python3:*)",
+      "Bash(pip3 install:*)",
+      "Bash(/Applications/Python 3.12/Install Certificates.command)",
+      "Bash(grep:*)",
+      "Bash(timeout 3 python3:*)",
+      "Bash(echo:*)",
+      "Bash(time python3:*)",
+      "Bash(pbcopy)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
