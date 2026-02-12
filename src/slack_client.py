@@ -481,3 +481,34 @@ class SlackClient:
                 return conv.id
 
         raise ValueError(f"Could not find channel: {channel}")
+
+    def find_dm_by_person(self, person: str) -> tuple[str, str]:
+        """Find a DM conversation by person name.
+
+        Args:
+            person: Person's name (partial match, case insensitive)
+
+        Returns:
+            Tuple of (channel_id, resolved_name)
+        """
+        person_lower = person.lower().strip().lstrip("@")
+        dm_convs = self.get_conversations(types="im")
+
+        # Try exact match first, then partial
+        for conv in dm_convs:
+            # Resolve the name for matching
+            resolved = self.resolve_dm_name(conv)
+            name_lower = resolved.lower().lstrip("@")
+
+            if person_lower == name_lower:
+                return conv.id, resolved
+
+        # Partial match
+        for conv in dm_convs:
+            resolved = self.resolve_dm_name(conv)
+            name_lower = resolved.lower().lstrip("@")
+
+            if person_lower in name_lower:
+                return conv.id, resolved
+
+        raise ValueError(f"Could not find DM with: {person}")

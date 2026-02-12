@@ -119,6 +119,29 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="slack_dm",
+            description="Read recent messages from a DM conversation with a specific person",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "person": {
+                        "type": "string",
+                        "description": "Person's name (e.g., 'Jen Rexford', 'jen', '@jennifer')",
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Number of messages to fetch (default: 20)",
+                        "default": 20,
+                    },
+                    "workspace": {
+                        "type": "string",
+                        "description": "Workspace key (optional)",
+                    },
+                },
+                "required": ["person"],
+            },
+        ),
+        Tool(
             name="slack_thread",
             description="Read messages in a specific thread",
             inputSchema={
@@ -352,6 +375,32 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
             text = msg.text.replace("\n", " ")
             thread_info = f" (thread: {msg.reply_count} replies)" if msg.reply_count > 0 else ""
             lines.append(f"[{time_str}] **{user}**{thread_info}: {text}")
+            lines.append(f"  _ts: {msg.ts}_")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    elif name == "slack_dm":
+        client = get_client(workspace)
+        person = args["person"]
+        limit = args.get("limit", 20)
+
+        channel_id, resolved_name = client.find_dm_by_person(person)
+        messages = client.get_messages(channel_id, limit=limit)
+
+        if not messages:
+            return f"No messages with {resolved_name}."
+
+        lines = [f"DM conversation with {resolved_name}:", ""]
+        for msg in messages:
+            # Determine if this is from the other person or me
+            if msg.user_id == client.my_user_id:
+                sender = "You"
+            else:
+                sender = resolved_name.lstrip("@")
+            time_str = format_relative_time(msg.timestamp)
+            text = msg.text.replace("\n", " ")
+            lines.append(f"[{time_str}] **{sender}**: {text}")
             lines.append(f"  _ts: {msg.ts}_")
             lines.append("")
 
