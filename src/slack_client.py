@@ -262,30 +262,66 @@ class SlackClient:
 
         return messages
 
-    def get_unread_messages(self, max_convos: int = 15) -> dict[str, list[Message]]:
-        """Get unread messages - only from conversations with unread_count > 0."""
+    def get_unread_messages(self, hours: int = 24, check_threads: bool = True) -> dict[str, list[Message]]:
+        """Get unread messages by checking recent activity.
+
+        The Slack API's unread_count is unreliable (misses threads), so we
+        check messages since last_read for recently active conversations.
+        """
+        cutoff = time.time() - (hours * 3600)
         conversations = self.get_conversations()
         unread: dict[str, list[Message]] = {}
 
-        # Only look at conversations with unread messages
-        has_unread = [c for c in conversations if c.unread_count and c.unread_count > 0]
+        # Check DMs first (most important) - top 10
+        dm_convos = [c for c in conversations if c.type == "dm" and not c.is_archived]
+        for conv in dm_convos[:10]:
+            oldest = float(conv.last_read) if conv.last_read else cutoff
+            messages = self.get_messages(conv.id, limit=10, oldest=oldest)
 
-        # Limit to avoid slowness
-        for conv in has_unread[:max_convos]:
-            if conv.is_archived:
-                continue
-
-            # Resolve DM names
-            name = self.resolve_dm_name(conv) if conv.type == "dm" else conv.name
-
-            # Get only unread messages (since last_read)
-            oldest = float(conv.last_read) if conv.last_read else None
-            messages = self.get_messages(conv.id, limit=conv.unread_count + 2, oldest=oldest)
+            # Filter to only messages from others (not my own)
+            messages = [m for m in messages if m.user_id != self.my_user_id]
 
             if messages:
+                name = self.resolve_dm_name(conv)
                 for msg in messages:
                     msg.channel_name = name
                 unread[name] = messages
+
+        # Check key channels for messages AND thread replies
+        key_channels = ["general", "random", "group-meeting"]
+        channel_convos = [c for c in conversations if c.type in ("channel", "group") and not c.is_archived]
+
+        # Prioritize key channels, then others
+        sorted_channels = sorted(channel_convos, key=lambda c: (c.name.lstrip("#") not in key_channels, c.name))
+
+        for conv in sorted_channels[:15]:
+            channel_messages = []
+
+            # Get recent messages
+            messages = self.get_messages(conv.id, limit=30, oldest=cutoff)
+
+            for msg in messages:
+                msg.channel_name = conv.name
+
+                # Check if this message has thread replies we haven't seen
+                if check_threads and msg.reply_count and msg.reply_count > 0:
+                    thread_msgs = self.get_thread(conv.id, msg.ts, limit=10)
+                    for tmsg in thread_msgs:
+                        # Skip the parent message (already have it)
+                        if tmsg.ts == msg.ts:
+                            continue
+                        # Only include recent replies from others
+                        if tmsg.user_id != self.my_user_id and tmsg.timestamp and tmsg.timestamp.timestamp() > cutoff:
+                            tmsg.channel_name = f"{conv.name} (thread)"
+                            channel_messages.append(tmsg)
+
+                # Include channel message if from others and mentions me or is recent
+                if msg.user_id != self.my_user_id:
+                    if msg.is_mention:
+                        channel_messages.append(msg)
+
+            if channel_messages:
+                unread[conv.name] = channel_messages
 
         return unread
 
