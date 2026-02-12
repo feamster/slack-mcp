@@ -185,7 +185,7 @@ async def list_tools() -> list[Tool]:
         # Write tools
         Tool(
             name="slack_send",
-            description="Send a message to a channel or DM",
+            description="Send a message to a channel or DM. If replying to a specific message (not the most recent), provide reply_to_ts to auto-add context.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -197,6 +197,10 @@ async def list_tools() -> list[Tool]:
                         "type": "string",
                         "description": "Message text to send",
                     },
+                    "reply_to_ts": {
+                        "type": "string",
+                        "description": "Timestamp of message being replied to (adds context if not most recent)",
+                    },
                     "workspace": {
                         "type": "string",
                         "description": "Workspace key (optional)",
@@ -207,7 +211,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="slack_reply",
-            description="Reply to a message in a thread",
+            description="Reply to a message in a thread. If replying to a specific message in the thread (not the most recent), provide reply_to_ts to auto-add context.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -217,11 +221,15 @@ async def list_tools() -> list[Tool]:
                     },
                     "thread_ts": {
                         "type": "string",
-                        "description": "Timestamp of the parent message",
+                        "description": "Timestamp of the parent message (thread root)",
                     },
                     "text": {
                         "type": "string",
                         "description": "Reply text",
+                    },
+                    "reply_to_ts": {
+                        "type": "string",
+                        "description": "Timestamp of specific message being replied to (adds context if not most recent in thread)",
                     },
                     "workspace": {
                         "type": "string",
@@ -440,8 +448,9 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
         client = get_client(workspace)
         channel = args["channel"]
         text = args["text"]
+        reply_to_ts = args.get("reply_to_ts")
 
-        msg = client.send_message(channel, text)
+        msg = client.send_message(channel, text, context_for_ts=reply_to_ts)
         return f"Message sent to {channel} (ts: {msg.ts})"
 
     elif name == "slack_reply":
@@ -449,8 +458,9 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
         channel = args["channel"]
         thread_ts = args["thread_ts"]
         text = args["text"]
+        reply_to_ts = args.get("reply_to_ts")
 
-        msg = client.reply_to_thread(channel, thread_ts, text)
+        msg = client.send_message(channel, text, thread_ts=thread_ts, context_for_ts=reply_to_ts)
         return f"Reply sent (ts: {msg.ts})"
 
     elif name == "slack_react":

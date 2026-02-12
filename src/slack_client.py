@@ -349,10 +349,23 @@ class SlackClient:
         channel: str,
         text: str,
         thread_ts: Optional[str] = None,
+        context_for_ts: Optional[str] = None,
     ) -> Message:
-        """Send a message to a channel or DM."""
+        """Send a message to a channel or DM.
+
+        Args:
+            channel: Channel name or ID
+            text: Message text
+            thread_ts: Thread to reply in (optional)
+            context_for_ts: If replying to a specific message, provide its ts
+                           to auto-add context if it's not the most recent
+        """
         # Resolve channel name to ID if needed
         channel_id = self._resolve_channel(channel)
+
+        # If replying to a specific message, check if we need to add context
+        if context_for_ts:
+            text = self._maybe_add_reply_context(channel_id, context_for_ts, text)
 
         kwargs = {"channel": channel_id, "text": text}
         if thread_ts:
@@ -367,6 +380,56 @@ class SlackClient:
             channel_id=channel_id,
             thread_ts=thread_ts,
         )
+
+    def _maybe_add_reply_context(self, channel_id: str, reply_to_ts: str, text: str) -> str:
+        """Add context prefix if replying to a non-recent message."""
+        # Get recent messages to check if this is the most recent
+        recent = self.get_messages(channel_id, limit=3)
+
+        if not recent:
+            return text
+
+        # If the message we're replying to is the most recent, no context needed
+        if recent[0].ts == reply_to_ts:
+            return text
+
+        # Find the original message to get context
+        original = None
+        for msg in recent:
+            if msg.ts == reply_to_ts:
+                original = msg
+                break
+
+        # If not in recent, fetch it specifically
+        if not original:
+            try:
+                response = self.client.conversations_history(
+                    channel=channel_id,
+                    latest=reply_to_ts,
+                    limit=1,
+                    inclusive=True,
+                )
+                if response.get("messages"):
+                    msg_data = response["messages"][0]
+                    original = Message(
+                        ts=msg_data["ts"],
+                        text=msg_data.get("text", ""),
+                        user_id=msg_data.get("user"),
+                        channel_id=channel_id,
+                    )
+            except:
+                pass
+
+        if original and original.text:
+            # Extract brief context (first ~50 chars, cut at word boundary)
+            context = original.text[:50]
+            if len(original.text) > 50:
+                context = context.rsplit(' ', 1)[0] + "..."
+            # Clean up formatting
+            context = context.replace('\n', ' ').strip()
+            return f'Re: "{context}" — {text}'
+
+        return text
 
     def reply_to_thread(
         self,
