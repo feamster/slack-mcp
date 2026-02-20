@@ -499,14 +499,21 @@ class SlackClient:
             return False
 
     def _resolve_channel(self, channel: str) -> str:
-        """Resolve a channel name or @user to a channel ID."""
+        """Resolve a channel name or @user to a channel ID.
+
+        Supports flexible matching:
+        - Exact name match (case-insensitive)
+        - Partial/fuzzy matching
+        - With or without # prefix
+        - Spaces, hyphens, underscores interchangeable
+        """
         # Already an ID
         if channel.startswith("C") or channel.startswith("D") or channel.startswith("G"):
             return channel
 
-        # Remove # prefix
-        if channel.startswith("#"):
-            channel = channel[1:]
+        # Remove # prefix and normalize
+        channel = channel.lstrip("#")
+        channel_normalized = channel.lower().replace(" ", "-").replace("_", "-")
 
         # Handle @user for DMs
         if channel.startswith("@"):
@@ -517,40 +524,150 @@ class SlackClient:
                     return conv.id
             raise ValueError(f"Could not find DM with user: {username}")
 
-        # Find channel by name
-        for conv in self.get_conversations(types="public_channel,private_channel"):
-            if conv.name.lstrip("#") == channel:
+        # Get all channels
+        all_channels = self.get_conversations(types="public_channel,private_channel")
+
+        # Try exact match first (case-insensitive)
+        for conv in all_channels:
+            conv_name = conv.name.lstrip("#").lower()
+            if conv_name == channel.lower():
                 return conv.id
 
-        raise ValueError(f"Could not find channel: {channel}")
+        # Try normalized match (spaces/hyphens/underscores interchangeable)
+        for conv in all_channels:
+            conv_normalized = conv.name.lstrip("#").lower().replace(" ", "-").replace("_", "-")
+            if conv_normalized == channel_normalized:
+                return conv.id
+
+        # Try partial/fuzzy match
+        matches = []
+        for conv in all_channels:
+            conv_name = conv.name.lstrip("#").lower()
+            conv_normalized = conv_name.replace(" ", "-").replace("_", "-")
+
+            # Check if search term is contained in channel name
+            if channel.lower() in conv_name or channel_normalized in conv_normalized:
+                matches.append(conv)
+            # Check if channel name is contained in search term
+            elif conv_name in channel.lower() or conv_normalized in channel_normalized:
+                matches.append(conv)
+
+        if len(matches) == 1:
+            return matches[0].id
+        elif len(matches) > 1:
+            # Multiple matches - return helpful error
+            match_names = [m.name for m in matches[:5]]
+            raise ValueError(
+                f"Multiple channels match '{channel}'. Did you mean one of: {', '.join(match_names)}?"
+            )
+
+        # No matches - find close matches for error message
+        close_matches = []
+        for conv in all_channels:
+            conv_name = conv.name.lstrip("#").lower()
+            # Simple similarity: check if any word matches
+            search_words = set(channel.lower().replace("-", " ").replace("_", " ").split())
+            conv_words = set(conv_name.replace("-", " ").replace("_", " ").split())
+            if search_words & conv_words:  # Any words in common
+                close_matches.append(conv.name)
+
+        if close_matches:
+            suggestions = close_matches[:5]
+            raise ValueError(
+                f"Channel '{channel}' not found. Did you mean: {', '.join(suggestions)}?"
+            )
+
+        raise ValueError(f"Channel '{channel}' not found. Use slack_channels to list available channels.")
 
     def find_dm_by_person(self, person: str) -> tuple[str, str]:
         """Find a DM conversation by person name.
+
+        Supports flexible matching:
+        - Full name ("Jen Rexford")
+        - Partial name ("Jen", "Rexford", "jrex")
+        - Username with or without @
+        - Case-insensitive
 
         Args:
             person: Person's name (partial match, case insensitive)
 
         Returns:
             Tuple of (channel_id, resolved_name)
+
+        Raises:
+            ValueError: With helpful suggestions if no match or multiple matches
         """
-        person_lower = person.lower().strip().lstrip("@")
+        person_clean = person.lower().strip().lstrip("@")
         dm_convs = self.get_conversations(types="im")
 
-        # Try exact match first, then partial
-        for conv in dm_convs:
-            # Resolve the name for matching
-            resolved = self.resolve_dm_name(conv)
-            name_lower = resolved.lower().lstrip("@")
-
-            if person_lower == name_lower:
-                return conv.id, resolved
-
-        # Partial match
+        # Build list of resolved names for matching
+        resolved_convs = []
         for conv in dm_convs:
             resolved = self.resolve_dm_name(conv)
-            name_lower = resolved.lower().lstrip("@")
+            resolved_convs.append((conv, resolved))
 
-            if person_lower in name_lower:
+        # Try exact match first
+        for conv, resolved in resolved_convs:
+            name_clean = resolved.lower().lstrip("@")
+            if person_clean == name_clean:
                 return conv.id, resolved
 
-        raise ValueError(f"Could not find DM with: {person}")
+        # Try partial match - search term in name
+        partial_matches = []
+        for conv, resolved in resolved_convs:
+            name_clean = resolved.lower().lstrip("@")
+            if person_clean in name_clean:
+                partial_matches.append((conv, resolved))
+
+        # Also try matching each word separately
+        if not partial_matches:
+            search_words = person_clean.split()
+            for conv, resolved in resolved_convs:
+                name_clean = resolved.lower().lstrip("@")
+                name_words = name_clean.split()
+                # Match if any search word matches start of any name word
+                for sw in search_words:
+                    for nw in name_words:
+                        if nw.startswith(sw) or sw.startswith(nw):
+                            partial_matches.append((conv, resolved))
+                            break
+                    else:
+                        continue
+                    break
+
+        if len(partial_matches) == 1:
+            conv, resolved = partial_matches[0]
+            return conv.id, resolved
+        elif len(partial_matches) > 1:
+            # Multiple matches - return helpful error
+            names = [r.lstrip("@") for _, r in partial_matches[:5]]
+            raise ValueError(
+                f"Multiple DMs match '{person}'. Did you mean: {', '.join(names)}?"
+            )
+
+        # No matches - find close matches for error message
+        close_matches = []
+        for conv, resolved in resolved_convs:
+            name_clean = resolved.lower().lstrip("@")
+            # Check first letter match or any word overlap
+            name_words = set(name_clean.split())
+            search_words = set(person_clean.split())
+            if name_words & search_words:
+                close_matches.append(resolved.lstrip("@"))
+            elif name_clean[0] == person_clean[0] if name_clean and person_clean else False:
+                close_matches.append(resolved.lstrip("@"))
+
+        if close_matches:
+            suggestions = close_matches[:5]
+            raise ValueError(
+                f"Could not find DM with '{person}'. Similar names: {', '.join(suggestions)}"
+            )
+
+        # Show some available DMs for context
+        available = [r.lstrip("@") for _, r in resolved_convs[:10]]
+        if available:
+            raise ValueError(
+                f"Could not find DM with '{person}'. Recent DMs include: {', '.join(available)}"
+            )
+
+        raise ValueError(f"Could not find DM with '{person}'. No DM conversations found.")

@@ -23,15 +23,53 @@ class Config:
     default_workspace: Optional[str] = None
 
     def get_workspace(self, key: Optional[str] = None) -> WorkspaceConfig:
-        """Get a workspace by key, or the default."""
+        """Get a workspace by key, or the default.
+
+        Workspace matching is case-insensitive and supports:
+        - Exact match (any case)
+        - Spaces/hyphens/underscores interchangeable
+        - Partial matching if unambiguous
+        """
         if key is None:
             key = self.default_workspace
         if key is None:
             # Return first workspace
             return next(iter(self.workspaces.values()))
-        if key not in self.workspaces:
-            raise ValueError(f"Unknown workspace: {key}")
-        return self.workspaces[key]
+
+        # If only one workspace configured, always return it
+        if len(self.workspaces) == 1:
+            return next(iter(self.workspaces.values()))
+
+        # Exact match
+        if key in self.workspaces:
+            return self.workspaces[key]
+
+        # Normalize the search key
+        key_normalized = key.lower().replace(" ", "").replace("-", "").replace("_", "")
+
+        # Try case-insensitive and normalized matching
+        matches = []
+        for ws_key, ws in self.workspaces.items():
+            ws_key_normalized = ws_key.lower().replace(" ", "").replace("-", "").replace("_", "")
+            ws_name_normalized = ws.name.lower().replace(" ", "").replace("-", "").replace("_", "")
+
+            # Check key and name (case-insensitive, normalized)
+            if key.lower() == ws_key.lower() or key.lower() == ws.name.lower():
+                return ws
+            if key_normalized == ws_key_normalized or key_normalized == ws_name_normalized:
+                return ws
+            # Partial match
+            if key_normalized in ws_key_normalized or key_normalized in ws_name_normalized:
+                matches.append(ws)
+
+        if len(matches) == 1:
+            return matches[0]
+        elif len(matches) > 1:
+            names = [f"'{m.key}'" for m in matches]
+            raise ValueError(f"Ambiguous workspace '{key}'. Matches: {', '.join(names)}")
+
+        available = [f"'{ws.key}'" for ws in self.workspaces.values()]
+        raise ValueError(f"Unknown workspace: '{key}'. Available: {', '.join(available)}")
 
     def list_workspaces(self) -> list[WorkspaceConfig]:
         """List all workspaces sorted by priority."""

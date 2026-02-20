@@ -59,13 +59,13 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="slack_summary",
-            description="Get a summary of Slack activity (DMs, mentions, channels). Use 'quick' mode for fast overview, 'full' for detailed scan.",
+            description="Get a summary of Slack activity with FULL message text (no truncation). Returns actual message content from DMs, mentions, and channels. Use 'quick' mode for 8 channels/DMs with 3-5 messages each, 'full' for 15 channels/DMs with 10+ messages each.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "mode": {
                         "type": "string",
-                        "description": "'quick' (fast, just recent activity) or 'full' (slower, detailed scan). Default: quick",
+                        "description": "'quick' (8 DMs + 8 channels, 3-5 msgs each) or 'full' (15 DMs + 15 channels, 10+ msgs each). Default: quick",
                         "default": "quick",
                     },
                     "hours": {
@@ -75,7 +75,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "workspace": {
                         "type": "string",
-                        "description": "Specific workspace to summarize (optional, defaults to all)",
+                        "description": "Specific workspace to summarize (optional, defaults to all). Case-insensitive.",
                     },
                 },
                 "required": [],
@@ -83,7 +83,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="slack_unread",
-            description="Get unread messages from DMs and key channels",
+            description="Get unread messages from DMs and channels with FULL message text (no truncation). Returns complete message content, timestamps, thread info, and user names. Includes thread replies.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -104,7 +104,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "workspace": {
                         "type": "string",
-                        "description": "Specific workspace (optional)",
+                        "description": "Specific workspace (optional). Case-insensitive.",
                     },
                 },
                 "required": [],
@@ -112,13 +112,13 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="slack_channel",
-            description="Read recent messages from a specific channel",
+            description="Read recent messages from a specific channel with FULL text (no truncation). Supports flexible channel name matching (case-insensitive, partial match, spaces/hyphens interchangeable). Returns thread info for each message.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "channel": {
                         "type": "string",
-                        "description": "Channel name (e.g., #general) or ID",
+                        "description": "Channel name (e.g., #general, 'broadband-sampling', 'broadband sampling') or ID. Flexible matching.",
                     },
                     "limit": {
                         "type": "number",
@@ -127,7 +127,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "workspace": {
                         "type": "string",
-                        "description": "Workspace key (optional)",
+                        "description": "Workspace key (optional). Case-insensitive.",
                     },
                 },
                 "required": ["channel"],
@@ -135,13 +135,13 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="slack_dm",
-            description="Read recent messages from a DM conversation with a specific person",
+            description="Read DM conversation with a specific person. Returns FULL message text (no truncation). Supports flexible name matching: full name ('Jen Rexford'), partial ('Jen', 'jrex'), username with/without @. If multiple matches, shows suggestions.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "person": {
                         "type": "string",
-                        "description": "Person's name (e.g., 'Jen Rexford', 'jen', '@jennifer')",
+                        "description": "Person's name - flexible matching (e.g., 'Jen Rexford', 'jen', 'jrex', '@jennifer')",
                     },
                     "limit": {
                         "type": "number",
@@ -150,7 +150,7 @@ async def list_tools() -> list[Tool]:
                     },
                     "workspace": {
                         "type": "string",
-                        "description": "Workspace key (optional)",
+                        "description": "Workspace key (optional). Case-insensitive.",
                     },
                 },
                 "required": ["person"],
@@ -158,21 +158,21 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="slack_thread",
-            description="Read messages in a specific thread",
+            description="Read all messages in a specific thread with FULL text (no truncation). Use the 'ts' value from other tools to identify the thread.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "channel": {
                         "type": "string",
-                        "description": "Channel name or ID",
+                        "description": "Channel name or ID (flexible matching)",
                     },
                     "thread_ts": {
                         "type": "string",
-                        "description": "Thread timestamp (the ts of the parent message)",
+                        "description": "Thread timestamp (the ts of the parent message, e.g., '1708123456.123456')",
                     },
                     "workspace": {
                         "type": "string",
-                        "description": "Workspace key (optional)",
+                        "description": "Workspace key (optional). Case-insensitive.",
                     },
                 },
                 "required": ["channel", "thread_ts"],
@@ -180,13 +180,13 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="slack_search",
-            description="Search for messages across Slack",
+            description="Search for messages across Slack. IMPORTANT: Search may not reliably find DM content (Slack API limitation). Use `slack_dm` to read DM conversations directly by person name.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search query (supports Slack search syntax)",
+                        "description": "Search query (supports Slack search syntax: 'from:@user', 'in:#channel', 'has:link', etc.)",
                     },
                     "count": {
                         "type": "number",
@@ -203,7 +203,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="slack_channels",
-            description="List all channels you're a member of",
+            description="List all channels you're a member of. Use slack_batch to fetch messages from multiple channels at once.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -218,6 +218,34 @@ async def list_tools() -> list[Tool]:
                     },
                 },
                 "required": [],
+            },
+        ),
+        Tool(
+            name="slack_batch",
+            description="Fetch messages from multiple channels in a single call. Much more efficient than calling slack_channel repeatedly. Returns full message text (no truncation).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "channels": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of channel names (e.g., ['#general', '#random', 'project-x']). Supports flexible matching.",
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Messages per channel (default: 10)",
+                        "default": 10,
+                    },
+                    "hours": {
+                        "type": "number",
+                        "description": "Only fetch messages from the last N hours (optional, default: no limit)",
+                    },
+                    "workspace": {
+                        "type": "string",
+                        "description": "Workspace key (optional)",
+                    },
+                },
+                "required": ["channels"],
             },
         ),
         # Write tools
@@ -365,15 +393,24 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
 
         lines = ["Unread messages:", ""]
         for channel_name, messages in unread.items():
-            lines.append(f"**{channel_name}** ({len(messages)} messages)")
-            for msg in messages[:3]:
-                preview = truncate_text(msg.text, 60)
+            thread_count = sum(1 for m in messages if m.thread_ts and m.thread_ts != m.ts)
+            thread_info = f", {thread_count} thread replies" if thread_count else ""
+            lines.append(f"**{channel_name}** ({len(messages)} messages{thread_info})")
+            lines.append("")
+            for msg in messages:
                 time_str = format_relative_time(msg.timestamp)
                 user = msg.user_name or "someone"
-                lines.append(f"  - [{user}] {time_str}: \"{preview}\"")
-            if len(messages) > 3:
-                lines.append(f"  - ... and {len(messages) - 3} more")
-            lines.append("")
+                # Full message text - no truncation
+                text = msg.text.replace("\n", " ")
+                thread_marker = ""
+                if msg.reply_count and msg.reply_count > 0:
+                    thread_marker = f" [thread: {msg.reply_count} replies]"
+                elif msg.thread_ts and msg.thread_ts != msg.ts:
+                    thread_marker = " [thread reply]"
+                lines.append(f"  **{user}** ({time_str}){thread_marker}:")
+                lines.append(f"  {text}")
+                lines.append(f"  _ts: {msg.ts}_")
+                lines.append("")
 
         return "\n".join(lines)
 
@@ -455,14 +492,29 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
         messages = client.search_messages(query, count=count)
 
         if not messages:
-            return f"No results for: {query}"
+            # Check if query looks like a person name
+            query_lower = query.lower()
+            looks_like_person = (
+                "from:" in query_lower or
+                "@" in query_lower or
+                " " in query.strip() or  # "First Last" format
+                query[0].isupper() if query else False  # Capitalized
+            )
+            hint = ""
+            if looks_like_person:
+                # Extract potential name from query
+                name = query.replace("from:", "").replace("@", "").strip()
+                hint = f"\n\n**Tip:** Search may not find DM content. Try `slack_dm` with person=\"{name}\" to read DMs directly."
+            return f"No results for: {query}{hint}"
 
         lines = [f"Search results for '{query}':", ""]
         for msg in messages:
             user = msg.user_name or "Unknown"
             time_str = format_relative_time(msg.timestamp)
-            text = truncate_text(msg.text, 80)
-            lines.append(f"**{msg.channel_name}** - {user} ({time_str})")
+            # Full text, no truncation
+            text = msg.text.replace("\n", " ")
+            thread_marker = f" [thread: {msg.reply_count} replies]" if msg.reply_count else ""
+            lines.append(f"**{msg.channel_name}** - {user} ({time_str}){thread_marker}")
             lines.append(f"  {text}")
             lines.append(f"  _ts: {msg.ts}_")
             lines.append("")
@@ -509,6 +561,56 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
             lines.append("")
             for conv in sorted(convs, key=lambda c: c.name.lower()):
                 lines.append(f"- {conv.name} (id: `{conv.id}`)")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    elif name == "slack_batch":
+        import time as time_module
+        client = get_client(workspace)
+        channels = args["channels"]
+        limit = args.get("limit", 10)
+        hours = args.get("hours")
+
+        cutoff = time_module.time() - (hours * 3600) if hours else None
+
+        lines = [f"Messages from {len(channels)} channels:", ""]
+        errors = []
+
+        for channel in channels:
+            try:
+                channel_id = client._resolve_channel(channel)
+                messages = client.get_messages(channel_id, limit=limit, oldest=cutoff)
+
+                if not messages:
+                    lines.append(f"## {channel}")
+                    lines.append("_No messages in this time range._")
+                    lines.append("")
+                    continue
+
+                thread_count = sum(1 for m in messages if m.reply_count and m.reply_count > 0)
+                thread_info = f" ({thread_count} with threads)" if thread_count else ""
+                lines.append(f"## {channel} ({len(messages)} messages{thread_info})")
+                lines.append("")
+
+                for msg in messages:
+                    user = msg.user_name or "Unknown"
+                    time_str = format_relative_time(msg.timestamp)
+                    text = msg.text.replace("\n", " ")  # Full text
+                    thread_marker = ""
+                    if msg.reply_count and msg.reply_count > 0:
+                        thread_marker = f" [thread: {msg.reply_count} replies]"
+                    lines.append(f"**{user}** ({time_str}){thread_marker}: {text}")
+                    lines.append(f"_ts: {msg.ts}_")
+                    lines.append("")
+
+            except ValueError as e:
+                errors.append(f"{channel}: {str(e)}")
+
+        if errors:
+            lines.append("## Errors")
+            for err in errors:
+                lines.append(f"- {err}")
             lines.append("")
 
         return "\n".join(lines)
