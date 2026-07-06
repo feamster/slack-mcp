@@ -26,9 +26,9 @@ display_information:
 oauth_config:
   scopes:
     user:
+      # Read
       - channels:history
       - channels:read
-      - chat:write
       - groups:history
       - groups:read
       - im:history
@@ -36,6 +36,11 @@ oauth_config:
       - mpim:history
       - mpim:read
       - users:read
+      - search:read       # slack_search
+      # Write
+      - chat:write        # send messages to channels + DMs
+      - reactions:write   # add emoji reactions
+      - files:write       # upload files / images
 settings:
   org_deploy_enabled: false
   socket_mode_enabled: false
