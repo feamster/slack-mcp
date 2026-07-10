@@ -41,6 +41,7 @@ oauth_config:
       - chat:write        # send messages to channels + DMs
       - reactions:write   # add emoji reactions
       - files:write       # upload files / images
+      - im:write          # open a NEW DM with someone you've never messaged (existing DMs work without this)
 settings:
   org_deploy_enabled: false
   socket_mode_enabled: false

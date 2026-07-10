@@ -754,15 +754,50 @@ class SlackClient:
             time.sleep(RATE_LIMIT_DELAY)
         return matches
 
-    def open_dm(self, user_id: str) -> str:
-        """Open (or return existing) DM channel with a user. Returns channel ID.
+    def find_dm_channel_by_user_id(self, user_id: str) -> Optional[str]:
+        """Return an existing DM channel ID for the given user, or None.
 
-        Idempotent: Slack returns the existing DM channel if there is one,
-        or creates a new one and returns its ID.
+        Uses the paginated conversations.list `im` type. This only needs
+        `im:read` (which we always have) and lets us skip `conversations.open`
+        (`im:write`) when a DM already exists.
         """
+        cursor = ""
+        while True:
+            params = {"types": "im", "limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            try:
+                response = self.client.conversations_list(**params)
+            except SlackApiError as e:
+                raise ValueError(f"conversations.list failed: {e}") from e
+            for dm in response.get("channels", []):
+                if dm.get("user") == user_id and not dm.get("is_user_deleted"):
+                    return dm.get("id")
+            cursor = (response.get("response_metadata") or {}).get("next_cursor", "")
+            if not cursor:
+                break
+            time.sleep(RATE_LIMIT_DELAY)
+        return None
+
+    def open_dm(self, user_id: str) -> str:
+        """Return the DM channel ID for a user, opening one if needed.
+
+        Tries existing DMs first (only needs `im:read`). Falls back to
+        `conversations.open` (needs `im:write`) if no DM exists yet.
+        """
+        existing = self.find_dm_channel_by_user_id(user_id)
+        if existing:
+            return existing
         try:
             response = self.client.conversations_open(users=user_id)
         except SlackApiError as e:
+            code = e.response.get("error", "") if hasattr(e, "response") else ""
+            if code == "missing_scope":
+                raise ValueError(
+                    f"conversations.open failed for {user_id}: this workspace's Slack app "
+                    f"needs the `im:write` scope to open a NEW DM. Existing DMs work fine. "
+                    f"Update the manifest at https://api.slack.com/apps and reinstall."
+                ) from e
             raise ValueError(f"conversations.open failed for {user_id}: {e}") from e
         channel = response.get("channel") or {}
         channel_id = channel.get("id")
