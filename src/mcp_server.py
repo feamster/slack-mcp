@@ -306,6 +306,35 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="slack_users_lookup",
+            description=(
+                "Look up workspace users by name, handle, or email. Returns matching users "
+                "with their user IDs, so you can DM someone you've never messaged before. "
+                "Matches case-insensitive against Slack login (name), real_name, display_name, "
+                "and profile email. If exactly one user matches you can pass their user ID "
+                "(Uxxxxx) directly to slack_send — it will auto-open a DM channel."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Name, handle, or email fragment to search for.",
+                    },
+                    "workspace": {
+                        "type": "string",
+                        "description": "Workspace key (optional)",
+                    },
+                    "limit": {
+                        "type": "number",
+                        "default": 10,
+                        "description": "Max results to return (default 10).",
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        Tool(
             name="slack_react",
             description="Add an emoji reaction to a message",
             inputSchema={
@@ -644,6 +673,26 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
         if success:
             return f"Added :{emoji}: reaction"
         return f"Failed to add reaction"
+
+    elif name == "slack_users_lookup":
+        client = get_client(workspace)
+        query = args["query"]
+        limit = int(args.get("limit", 10))
+        users = client.find_user_in_workspace(query)
+        if not users:
+            return f"No workspace users match '{query}'."
+        shown = users[:limit]
+        lines = [f"Found {len(users)} user(s) matching '{query}':"]
+        for u in shown:
+            lines.append(f"- {u.real_name} (@{u.name}) — id: `{u.id}`")
+        if len(users) > limit:
+            lines.append(f"…and {len(users) - limit} more (raise `limit` to see them).")
+        lines.append("")
+        lines.append(
+            "To DM one of these people, pass their user id (Uxxxxx) as the `channel` "
+            "argument to `slack_send`; it will auto-open the DM channel."
+        )
+        return "\n".join(lines)
 
     else:
         return f"Unknown tool: {name}"

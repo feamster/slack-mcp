@@ -506,10 +506,14 @@ class SlackClient:
         - Partial/fuzzy matching
         - With or without # prefix
         - Spaces, hyphens, underscores interchangeable
+        - User IDs (Uxxx) — auto-opens a DM if none exists yet
         """
         # Already an ID
         if channel.startswith("C") or channel.startswith("D") or channel.startswith("G"):
             return channel
+        if channel.startswith("U") or channel.startswith("W"):
+            # Slack user ID — open a DM.
+            return self.open_dm(channel)
 
         # Remove # prefix and normalize
         channel = channel.lstrip("#")
@@ -518,11 +522,21 @@ class SlackClient:
         # Handle @user for DMs
         if channel.startswith("@"):
             username = channel[1:]
-            # Find user by name
+            # First: existing DM (fast path).
             for conv in self.get_conversations(types="im"):
                 if username.lower() in conv.name.lower():
                     return conv.id
-            raise ValueError(f"Could not find DM with user: {username}")
+            # Fallback: look up the user in the workspace and open a DM.
+            users = self.find_user_in_workspace(username)
+            if len(users) == 1:
+                return self.open_dm(users[0].id)
+            if len(users) > 1:
+                names = ", ".join(f"@{u.name} ({u.real_name})" for u in users[:5])
+                raise ValueError(
+                    f"Multiple users match '{username}'. Did you mean one of: {names}? "
+                    f"Pass a specific @handle or user ID."
+                )
+            raise ValueError(f"Could not find DM or user matching: {username}")
 
         # Get all channels
         all_channels = self.get_conversations(types="public_channel,private_channel")
@@ -663,6 +677,20 @@ class SlackClient:
                 f"Could not find DM with '{person}'. Similar names: {', '.join(suggestions)}"
             )
 
+        # Existing-DM search exhausted — fall back to the workspace user list
+        # so we can DM someone we've never messaged before.
+        users = self.find_user_in_workspace(person_clean)
+        if len(users) == 1:
+            u = users[0]
+            channel_id = self.open_dm(u.id)
+            return channel_id, u.real_name or f"@{u.name}"
+        if len(users) > 1:
+            names = ", ".join(f"@{u.name} ({u.real_name})" for u in users[:5])
+            raise ValueError(
+                f"Multiple workspace users match '{person}'. Did you mean one of: {names}? "
+                f"Pass a specific @handle or user ID."
+            )
+
         # Show some available DMs for context
         available = [r.lstrip("@") for _, r in resolved_convs[:10]]
         if available:
@@ -671,3 +699,73 @@ class SlackClient:
             )
 
         raise ValueError(f"Could not find DM with '{person}'. No DM conversations found.")
+
+    def find_user_in_workspace(self, query: str) -> list[User]:
+        """Search all workspace users for a name/handle/email match.
+
+        Uses users.list (paginated). Case-insensitive substring match on
+        the user's login (`name`), real_name, display_name, and email
+        (as recorded in the profile). Deleted users and bots are excluded.
+
+        Use this to find someone you've never DM'd before — pair with
+        `open_dm(user.id)` to create the DM channel.
+        """
+        q = query.lower().strip().lstrip("@")
+        if not q:
+            return []
+        matches: list[User] = []
+        seen_ids: set[str] = set()
+        cursor = ""
+        while True:
+            params = {"limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            try:
+                response = self.client.users_list(**params)
+            except SlackApiError as e:
+                raise ValueError(f"users_list failed: {e}") from e
+            for u in response.get("members", []):
+                if u.get("deleted") or u.get("is_bot"):
+                    continue
+                uid = u.get("id", "")
+                if not uid or uid in seen_ids:
+                    continue
+                profile = u.get("profile", {}) or {}
+                candidates = [
+                    u.get("name", ""),
+                    u.get("real_name", ""),
+                    profile.get("display_name", ""),
+                    profile.get("real_name", ""),
+                    profile.get("email", ""),
+                ]
+                if any(c and q in c.lower() for c in candidates):
+                    matches.append(
+                        User(
+                            id=uid,
+                            name=u.get("name", ""),
+                            real_name=u.get("real_name") or u.get("name", ""),
+                            is_bot=u.get("is_bot", False),
+                        )
+                    )
+                    seen_ids.add(uid)
+            cursor = (response.get("response_metadata") or {}).get("next_cursor", "")
+            if not cursor:
+                break
+            time.sleep(RATE_LIMIT_DELAY)
+        return matches
+
+    def open_dm(self, user_id: str) -> str:
+        """Open (or return existing) DM channel with a user. Returns channel ID.
+
+        Idempotent: Slack returns the existing DM channel if there is one,
+        or creates a new one and returns its ID.
+        """
+        try:
+            response = self.client.conversations_open(users=user_id)
+        except SlackApiError as e:
+            raise ValueError(f"conversations.open failed for {user_id}: {e}") from e
+        channel = response.get("channel") or {}
+        channel_id = channel.get("id")
+        if not channel_id:
+            raise ValueError(f"conversations.open returned no channel id for {user_id}")
+        return channel_id
