@@ -519,13 +519,20 @@ class SlackClient:
         channel = channel.lstrip("#")
         channel_normalized = channel.lower().replace(" ", "-").replace("_", "-")
 
-        # Handle @user for DMs
+        # Handle @user for DMs — delegate to the resolver that handles
+        # deferred "@user:UXXXX" conversation names (matching against the
+        # raw conv.name can never succeed for DMs, since names are only
+        # resolved lazily via resolve_dm_name).
         if channel.startswith("@"):
             username = channel[1:]
-            # First: existing DM (fast path).
-            for conv in self.get_conversations(types="im"):
-                if username.lower() in conv.name.lower():
-                    return conv.id
+            # First: existing DM (fast path). Matching raw conv.name never
+            # works for DMs (names are deferred as "@user:UXXXX"), so use
+            # the resolver that lazily resolves real names.
+            try:
+                conv_id, _resolved = self.find_dm_by_person(username)
+                return conv_id
+            except ValueError:
+                pass
             # Fallback: look up the user in the workspace and open a DM.
             users = self.find_user_in_workspace(username)
             if len(users) == 1:
