@@ -72,6 +72,14 @@ For every DM thread and channel message, determine which bucket it belongs to:
 - Bot notifications (GitHub, Zapier, PagerDuty, etc.).
 - Broadcast messages to channels the user is only nominally a member of.
 
+**DMs are NEVER FYI-only.** Every DM that has any human message
+un-responded-to by the user goes to bucket A (needs reply), even if
+the last message is a closing ack ("no worries!"), a thanks, or something
+you'd otherwise categorize as "historical." A DM with an unadvanced read
+cursor sits in the user's unread pile forever unless you either send a
+reply or (once available) mark it read — see §"Close the loop on every
+DM" below.
+
 ### 4. Draft replies
 
 For every item in bucket A (and bucket B, marked optional), draft a proposed reply in the user's voice:
@@ -82,6 +90,11 @@ For every item in bucket A (and bucket B, marked optional), draft a proposed rep
 
 ### 5. Present the triage report
 
+Preferred format is a **compact table** with one row per item.
+Even the "obvious ack" items get their own row — the user wants to
+see every draft going out, no matter how straightforward, so nothing
+slips through as an assumed-approved batch send.
+
 Structure:
 
 ```
@@ -91,30 +104,25 @@ Structure:
 
 ### Needs a reply
 
-**1. DM — @<person> (<Nh ago>).** <one-sentence context>
-> "<verbatim quote of what they said>"
-
-Proposed reply:
-> <draft>
-
-**2. #<channel> — @<person> (<Nh ago>).** <context>
-> "<quote>"
-
-Proposed reply:
-> <draft>
+| # | From | Age | Ask | Proposed reply |
+|---|------|-----|-----|----------------|
+| 1 | @Person | 3h | "quote or one-sentence paraphrase of their ask" | *draft text* |
+| 2 | @Other | 1d | "quote…" | *draft text* |
+| 3 | @Third (ack only) | 4d | "no worries!" (closing ack) | *"got it, thanks — see you in class"* |
 
 ### Maybe warrant a touch (your call)
 
-**3. #<channel> — <description of activity>.**
-
-Options: skip / post an acknowledgment / react-only.
-[Draft acknowledgment if "post" chosen]
+| # | Channel | Context | Options |
+|---|---------|---------|---------|
+| 4 | #project | five student intros in 24h | skip / post welcome / react-only |
 
 ### FYI only
-- <brief bullet list>
+- <brief bullet list of items that require no user decision>
 ```
 
-End with a per-item yes/no/modify prompt.
+End with a per-item yes/no/modify prompt — even for the "ack only"
+rows. Do NOT assume that straightforward acks are pre-approved just
+because they look routine; the user wants to see every draft.
 
 ### 6. Wait for user decisions
 
@@ -148,7 +156,53 @@ Rules for determining "needs reply" precisely:
 - Public-channel announcements from the user themselves.
 - Bot messages without a mention (GitHub app posts, Zapier alerts, etc.).
 - Reactions-only threads (someone :eyes:ed a message but didn't speak).
-- Messages older than the requested window (default 48h).
+- Messages older than the requested window (default 48h) **in channels**.
+  (DMs older than the window still get flagged — see "Close the loop"
+  below. Age is not an excuse to skip a DM ack.)
+
+## Close the loop on every DM
+
+Every DM in the un-responded queue needs at least a one-line
+acknowledgment from the user. Concretely:
+
+- Never skip a DM based on "historical, no reply needed" or
+  "already handled through a different channel" or "the answer is
+  moot now." The DM sits in the user's Slack unread pile until the
+  read cursor advances, and the pile is exactly the problem this
+  skill exists to prevent.
+- If a react was your first-choice response and the react fails
+  (bad ts, denied by a permission hook, etc.), **fall back to a
+  text ack, don't skip.** A "no worries, hope it's sorted" one-liner
+  clears the loop.
+- Loop-closing options, in preference order:
+  1. Substantive reply (draft per §"Draft replies").
+  2. One-line ack ("got it, thanks" / "no worries, see you in class").
+  3. Emoji react (`slack_react`) — only for channel messages or
+     thread replies, NOT primary DMs. DMs need words.
+- Never batch-skip: if you find yourself categorizing a whole cluster
+  of DMs as "historical," stop and treat each as a bucket-A item
+  needing a real ack.
+
+## Mark-as-read after replying
+
+When the user has replied to a DM (or authorized this skill to send
+one), the DM's read cursor should be advanced so the badge clears.
+
+- **If `slack_mark_read` (or equivalent) is available in this
+  version of the MCP, call it after every successful `slack_send`
+  to that conversation.** Cursor moves to the ts of the message you
+  just sent (or the latest incoming message, whichever is later).
+- **If the MCP has no mark-as-read tool** (as of the initial
+  implementation, it does not — `slack_send` does not advance the
+  read cursor, nor does `slack_dm`), then:
+  - Include a compact "these still need a UI touch to clear the
+    badge" line at the end of the final triage report, so the user
+    knows to tap through in Slack. Example:
+    > _Note: MCP has no mark-as-read; replied DMs above will
+    > still show unread until you open Slack. Nick and I sent the
+    > content; the badges are on you._
+  - Track this as a known gap; when the MCP gains the tool, the
+    workflow above becomes automatic.
 
 ## Voice-matching tips
 
@@ -199,6 +253,8 @@ When drafting on the user's behalf:
 - **Never send a Slack message without explicit per-item approval.**
 - **Never batch-send.** Even a batch of approved messages goes one `slack_send` call at a time so the user can course-correct mid-batch if needed.
 - **Never react on someone's behalf without approval.** Same rule as sending.
+- **Close the loop on every DM.** No DM gets skipped as "historical," "already handled," or "moot now." Every un-responded DM gets at least a one-line ack. See §"Close the loop on every DM."
+- **Mark replied DMs as read** if the MCP supports it; otherwise report the gap so the user knows to open Slack to clear the badges. See §"Mark-as-read after replying."
 - **Don't guess at facts the user knows.** If a draft would need a paper title, meeting time, or private info you don't have verified this session, ask first.
 - **Match voice.** Read prior messages before drafting; don't sound like a generic auto-reply.
 - **Silent = silent.** If a workspace has no relevant activity, say so — don't invent items to look thorough.
