@@ -6,6 +6,8 @@ from typing import Any
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
+    CallToolResult,
+    ListToolsResult,
     TextContent,
     Tool,
 )
@@ -13,9 +15,6 @@ from mcp.types import (
 from .config import get_config
 from .slack_client import SlackClient
 from .summarizer import format_summary_markdown, summarize_workspace, quick_summary, truncate_text, format_relative_time
-
-# Initialize MCP server
-server = Server("slack-mcp")
 
 # Lazy-loaded clients per workspace
 _clients: dict[str, SlackClient] = {}
@@ -43,7 +42,6 @@ def get_all_clients() -> list[SlackClient]:
     return clients
 
 
-@server.list_tools()
 async def list_tools() -> list[Tool]:
     """List available Slack tools."""
     return [
@@ -363,7 +361,6 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls."""
     try:
@@ -696,6 +693,22 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
 
     else:
         return f"Unknown tool: {name}"
+
+
+# MCP SDK 2.x passes request handlers to the Server constructor instead of
+# registering them with decorators; these adapt the handlers above.
+async def _on_list_tools(ctx, params) -> ListToolsResult:
+    return ListToolsResult(tools=await list_tools())
+
+
+async def _on_call_tool(ctx, params) -> CallToolResult:
+    return CallToolResult(content=list(await call_tool(params.name, params.arguments or {})))
+
+
+server = Server(
+    "slack-mcp",
+    on_list_tools=_on_list_tools, on_call_tool=_on_call_tool,
+)
 
 
 async def run_server():

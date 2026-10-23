@@ -9,9 +9,13 @@ description = "Slack MCP server for reading and responding to Slack messages"
 requires-python = ">=3.10"
 dependencies = [
     "slack-sdk>=3.27.0",
-    "mcp>=1.0.0",
+    "mcp>=2.3,<3",
 ]
 
 [project.scripts]
 slack-mcp = "src.mcp_server:main"
 slack-summary = "slack_summary:main"
+
+[tool.uv]
+# Run in place with `uv run`; dependencies only, no package build
+package = false
