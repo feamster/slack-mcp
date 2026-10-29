@@ -62,6 +62,9 @@ oauth_config:
       - reactions:write   # add emoji reactions
       - files:write       # upload files / images
       - im:write          # open a NEW DM with someone you've never messaged (existing DMs work without this)
+      - channels:write    # mark public channels read (slack_mark_read, and after send/reply)
+      - groups:write      # mark private channels read
+      - mpim:write        # mark group DMs read
 settings:
   org_deploy_enabled: false
   socket_mode_enabled: false
@@ -72,6 +75,8 @@ settings:
 5. Copy the **User OAuth Token** (starts with `xoxp-`)
 
 > **Note**: Slack requires a separate app per workspace (public distribution requires Slack approval).
+
+> **Adding scopes later**: open the app at https://api.slack.com/apps → **OAuth & Permissions** → add the missing **User Token Scopes** → **Reinstall to Workspace** → Allow. The `xoxp-` token usually stays the same; if it changed, update `~/.mcp-auth/slack/config.json`. Restart Claude Code afterwards. Without `channels:write`, `slack_mark_read` clears DMs but reports `missing_scope` for public channels.
 
 ### 2. Configure Tokens
 
