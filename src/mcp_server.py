@@ -109,6 +109,25 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="slack_mark_read",
+            description="Mark all conversations with recent activity as read (channels, private channels, DMs, group DMs). One search call finds the active conversations, then each is marked read at its newest message. Defaults to every configured workspace and the last 72 hours.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "hours": {
+                        "type": "number",
+                        "description": "Only conversations with a message in the last N hours are marked (default: 72)",
+                        "default": 72,
+                    },
+                    "workspace": {
+                        "type": "string",
+                        "description": "Specific workspace (optional, defaults to all). Case-insensitive.",
+                    },
+                },
+                "required": [],
+            },
+        ),
+        Tool(
             name="slack_channel",
             description="Read recent messages from a specific channel with FULL text (no truncation). Supports flexible channel name matching (case-insensitive, partial match, spaces/hyphens interchangeable). Returns thread info for each message.",
             inputSchema={
@@ -405,6 +424,16 @@ async def _handle_tool(name: str, args: dict[str, Any]) -> str:
                 clients = get_all_clients()
                 summaries = [summarize_workspace(c, hours=hours) for c in clients]
             return format_summary_markdown(summaries)
+
+    elif name == "slack_mark_read":
+        hours = int(args.get("hours", 72))
+        clients = [get_client(workspace)] if workspace else get_all_clients()
+        results = [c.mark_all_read(hours=hours) for c in clients]
+        lines = [f"Marked read (activity in the last {hours} h):"]
+        for r in results:
+            err = f"; errors: {r['errors']}" if r["errors"] else ""
+            lines.append(f"- {r['workspace']}: {r['marked']} of {r['active']} active conversations{err}")
+        return "\n".join(lines)
 
     elif name == "slack_unread":
         client = get_client(workspace)

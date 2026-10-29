@@ -7,6 +7,7 @@ from typing import Optional
 
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+from slack_sdk.http_retry.builtin_handlers import RateLimitErrorRetryHandler
 
 from .config import WorkspaceConfig
 
@@ -68,7 +69,9 @@ class SlackClient:
     _conversations_cache_time: float = 0
 
     def __post_init__(self):
+        # Honour Retry-After on HTTP 429 instead of failing the call.
         self.client = WebClient(token=self.workspace.token)
+        self.client.retry_handlers.append(RateLimitErrorRetryHandler(max_retry_count=3))
 
     @property
     def my_user_id(self) -> str:
@@ -325,6 +328,50 @@ class SlackClient:
                 unread[conv.name] = channel_messages
 
         return unread
+
+    def mark_all_read(self, hours: int = 72) -> dict:
+        """Mark every conversation with activity in the last `hours` as read.
+
+        Efficient path: one paginated search.messages call finds the
+        conversations (channels, groups, DMs, group DMs) that had any message
+        in the window, then one conversations.mark per active conversation,
+        set to the newest message timestamp seen there. Quiet conversations
+        are never touched, so the cost is proportional to activity, not to
+        the number of conversations.
+        """
+        since = time.time() - hours * 3600
+        after = datetime.fromtimestamp(since - 86400).strftime("%Y-%m-%d")
+        latest: dict[str, str] = {}
+        page = 1
+        while True:
+            response = self.client.search_messages(
+                query=f"after:{after}", sort="timestamp", sort_dir="desc", count=100, page=page
+            )
+            block = response.get("messages", {})
+            for match in block.get("matches", []):
+                channel_id = (match.get("channel") or {}).get("id")
+                ts = match.get("ts")
+                if not channel_id or not ts or float(ts) < since:
+                    continue
+                if float(ts) > float(latest.get(channel_id, "0")):
+                    latest[channel_id] = ts
+            paging = block.get("paging", {})
+            if page >= paging.get("pages", 1) or page >= 10:
+                break
+            page += 1
+            time.sleep(RATE_LIMIT_DELAY)
+
+        marked = 0
+        errors: dict[str, int] = {}
+        for channel_id, ts in latest.items():
+            try:
+                self.client.conversations_mark(channel=channel_id, ts=ts)
+                marked += 1
+            except SlackApiError as e:
+                err = e.response.get("error", "unknown") if e.response else "unknown"
+                errors[err] = errors.get(err, 0) + 1
+            time.sleep(RATE_LIMIT_DELAY)
+        return {"workspace": self.workspace.key, "hours": hours, "active": len(latest), "marked": marked, "errors": errors}
 
     def get_mentions(self, hours: int = 24) -> list[Message]:
         """Get messages where the user was mentioned."""
