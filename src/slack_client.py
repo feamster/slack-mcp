@@ -462,6 +462,14 @@ class SlackClient:
 
         response = self.client.chat_postMessage(**kwargs)
 
+        # Replying is reading: mark the conversation read up to our own
+        # message so the badge clears. Best effort; a missing scope on
+        # public channels must not fail the send.
+        try:
+            self.client.conversations_mark(channel=channel_id, ts=response["ts"])
+        except SlackApiError:
+            pass
+
         return Message(
             ts=response["ts"],
             text=text,

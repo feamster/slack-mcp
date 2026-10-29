@@ -162,8 +162,8 @@ slack-mcp/
 
 | Tool | Description |
 |------|-------------|
-| `slack_send` | Send message to channel or DM |
-| `slack_reply` | Reply in a thread |
+| `slack_send` | Send message to channel or DM (the conversation is marked read up to your message) |
+| `slack_reply` | Reply in a thread (the conversation is marked read up to your reply) |
 | `slack_react` | Add emoji reaction |
 | `slack_mark_read` | Mark every conversation with recent activity as read (one search, then one mark per active conversation; `hours`, optional `workspace`) |
 
